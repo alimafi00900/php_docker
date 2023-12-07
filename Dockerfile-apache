@@ -1,0 +1,93 @@
+FROM php:7.4-apache
+#FROM php:7.4-fpm
+
+#php -i|grep mongo
+
+RUN  apt-get update && apt-get -y install  gnupg
+
+
+RUN apt-get install -y  libsasl2-dev\
+                        libssl-dev
+
+# mcrypt
+RUN apt-get install -y libmcrypt-dev
+#RUN apt-get install -y  mongodb
+
+# RUN echo "deb http://security.ubuntu.com/ubuntu focal-security main" | sudo tee /etc/apt/sources.list.d/focal-security.list
+
+# RUN sudo apt-get update
+# RUN sudo apt-get install libssl1.1
+
+
+# # https://docs.mongodb.com/manual/tutorial/install- 
+# RUN apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv 0C49F3730359A14518585931BC711F9BA15703C6
+# RUN echo "deb http://repo.mongodb.org/apt/debian jessie/mongodb-org/3.4 main" | tee /etc/apt/sources.list.d/mongodb-org-3.4.list
+# RUN apt-get update
+# RUN apt-get install -y mongodb-org
+
+
+RUN apt-get update && apt-get install -y libmcrypt-dev
+
+RUN pecl install mcrypt
+
+RUN docker-php-ext-enable mcrypt
+
+# iconv
+RUN docker-php-ext-install -j$(nproc) iconv
+
+# semaphore
+RUN docker-php-ext-install -j$(nproc) sysvsem
+
+
+
+COPY . .
+RUN   apt-get -y autoremove && \
+    # As apache is never run as root, change dir ownership
+    a2disconf other-vhosts-access-log && \
+    chown -Rh www-data. /var/run/apache2 && \
+    a2enmod rewrite headers expires ext_filter
+
+RUN pecl install mongodb
+RUN a2enmod ssl && a2enmod rewrite
+
+
+RUN apt-get install -y libzip-dev zip curl libpng-dev libonig-dev libjpeg-dev libfreetype6-dev
+RUN docker-php-ext-configure gd --with-freetype --with-jpeg
+RUN docker-php-ext-install -j$(nproc) mysqli pdo pdo_mysql zip gd mbstring exif iconv
+
+RUN docker-php-ext-enable pdo_mysql zip gd mongodb
+
+RUN  apt-get -y install openssl
+RUN apt-get update && \
+    apt-get -y install \
+    # Ensure apache can bind to 80 as non-root
+    libcap2-bin && \
+    setcap 'cap_net_bind_service=+ep' /usr/sbin/apache2 && \
+    dpkg --purge libcap2-bin && \
+    apt-get -y autoremove && \
+    # As apache is never run as root, change dir ownership
+    a2disconf other-vhosts-access-log && \
+    chown -Rh www-data. /var/run/apache2 && \
+    # Install ImageMagick CLI tools
+    apt-get -y install --no-install-recommends imagemagick && \
+    # Clean up apt setup files
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/* && \
+    # Setup apache
+    a2enmod rewrite headers expires ext_filter
+
+# Override default apache and php config
+COPY src/000-default.conf /etc/apache2/sites-available
+COPY src/mpm_prefork.conf /etc/apache2/mods-available
+COPY src/status.conf      /etc/apache2/mods-available
+COPY src/99-local.ini     /etc/php/7.4/apache2/conf.d
+
+# Expose details about this docker image
+#COPY src/index.php /var/www/html
+
+
+
+USER www-data
+
+EXPOSE 80
+#EXPOSE 443
